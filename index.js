@@ -1,50 +1,27 @@
-require("dotenv").config();
-const express = require("express");
-const TelegramBot = require("node-telegram-bot-api");
-const path = require("path");
+import 'dotenv/config';
+import express from 'express';
+import TelegramBot from 'node-telegram-bot-api';
+import { createCanvas, loadImage } from 'canvas';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY; 
+const OWM_API_KEY = process.env.OWM_API_KEY;
+const CITY = process.env.CITY || "Odessa,UA";
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
-function buildMessage(baseText) {
-  return `${baseText}\n\n✅ <a href="https://t.me/huyova_bila_tserkva">Хуйова Біла Церква</a> | <a href="https://t.me/xy_bts">Прислати новину</a>`;
-}
+/* ================= HELPERS ================= */
 
-async function sendDailyWeather() {
-  try {
-    const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Bila+Tserkva,UA&appid=${OPENWEATHER_API_KEY}&units=metric&lang=uk`);
-    const data = await res.json();
-
-    if (!data || data.cod !== 200) {
-      throw new Error(data.message || "Не вдалося отримати дані погоди");
-    }
-
-    const temp = data.main.temp.toFixed(1);
-    const feelsLike = data.main.feels_like.toFixed(1);
-    const description = data.weather[0].description;
-    const humidity = data.main.humidity;
-    const windSpeed = data.wind.speed.toFixed(1);
-
-    const descLower = description.toLowerCase();
-
-    const text = `🌤 <b>Погода у Білій Церкві на сьогодні</b>\n\n` +
-                 `🌡 Температура: ${temp}°C (відчувається як ${feelsLike}°C)\n` +
-                 `💧 Вологість: ${humidity}%\n` +
-                 `💨 Вітер: ${windSpeed} м/с\n` +
-                 `🌈 Стан: ${description}\n\n` +
-                 `☕ Рекомендація: ${getWeatherAdvice(descLower, temp)}`;
-
-    // Локальна картинка
-    const imagePath = path.join(__dirname, "images", "va.jpg");
-
-    await bot.sendPhoto(CHAT_ID, imagePath, { caption: buildMessage(text), parse_mode: "HTML" });
-    console.log("Погода відправлена з локальною картинкою ✅");
-  } catch (err) {
-    console.error("Помилка при отриманні погоди:", err.message);
-  }
+function getTomorrowFormattedUA() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toLocaleDateString('uk-UA');
 }
 
 function getWeatherAdvice(desc, temp) {
@@ -57,7 +34,151 @@ function getWeatherAdvice(desc, temp) {
   return "Чудовий день, насолоджуйся 🌤";
 }
 
-// ==== Щоденний відправка о 07:45
+/* ================= API LOGIC ================= */
+
+async function getForecastFromAPI() {
+  const url = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(CITY)}&units=metric&lang=uk&appid=${OWM_API_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!data.list) throw new Error('Погода десь про*балася (немає даних)');
+
+  const now = new Date();
+  const nightStart = new Date(now).setHours(20, 0, 0, 0);
+  const nightEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000).setHours(8, 0, 0, 0);
+  const dayStart = new Date(now.getTime() + 24 * 60 * 60 * 1000).setHours(8, 0, 0, 0);
+  const dayEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000).setHours(20, 0, 0, 0);
+
+  const nightPoints = data.list.filter(item => (item.dt * 1000) >= nightStart && (item.dt * 1000) <= nightEnd);
+  const dayPoints = data.list.filter(item => (item.dt * 1000) >= dayStart && (item.dt * 1000) <= dayEnd);
+
+  const getStats = (points, type) => {
+    if (points.length === 0) return { temp: 0, desc: 'хз шо там', icon: '01d', humidity: 0, wind: 0 };
+    
+    let target = points[0];
+    points.forEach(p => {
+      if (type === 'min' && p.main.temp < target.main.temp) target = p;
+      if (type === 'max' && p.main.temp > target.main.temp) target = p;
+    });
+
+    const rainPoint = points.find(p => p.weather[0].main === 'Rain' || p.weather[0].main === 'Snow');
+    const finalDisplay = rainPoint || target;
+
+    return {
+      temp: Math.round(target.main.temp),
+      desc: finalDisplay.weather[0].description,
+      icon: finalDisplay.weather[0].icon,
+      humidity: finalDisplay.main.humidity,
+      wind: finalDisplay.wind.speed
+    };
+  };
+
+  return {
+    night: getStats(nightPoints, 'min'),
+    day: getStats(dayPoints, 'max')
+  };
+}
+
+/* ================= CANVAS GENERATOR ================= */
+
+async function createWeatherImage(forecast) {
+  const WIDTH = 609;
+  const HEIGHT = 340;
+  const canvas = createCanvas(WIDTH, HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  const phrases = ['ЄБАТЬ', 'ТА НУ НАХУЙ', 'ЗАЄБІСЬ', 'НУ ПІЗДЄЦ', 'ЦЕ ПИЗДА', 'Я В АХУЇ', 'ХУЯК'];
+  const randomText = phrases[Math.floor(Math.random() * phrases.length)];
+
+  const faceIndex = Math.floor(Math.random() * 4) + 1;
+  const personPath = path.join(__dirname, 'icons', 'faces', `face_${faceIndex}.png`);
+
+  const [iconNight, iconDay, personImg] = await Promise.all([
+    loadImage(`https://openweathermap.org/img/wn/${forecast.night.icon}@4x.png`),
+    loadImage(`https://openweathermap.org/img/wn/${forecast.day.icon}@4x.png`),
+    loadImage(personPath)
+  ]);
+
+  const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+  grad.addColorStop(0, '#2b5f8a');
+  grad.addColorStop(1, '#2b5f8a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.font = '22px Arial';
+  ctx.fillText(`Погода в Білій Церкві на завтра ${getTomorrowFormattedUA()}`, WIDTH / 2, 35);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(WIDTH / 2, 70); ctx.lineTo(WIDTH / 2, 220); ctx.stroke();
+
+  const drawBlock = (title, icon, temp, desc, centerX) => {
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = 'bold 22px Arial'; 
+    ctx.textAlign = 'center';
+    ctx.fillText(title, centerX, 90);
+
+    ctx.drawImage(icon, centerX - 115, 95, 130, 130);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 75px Arial'; 
+    ctx.textAlign = 'left';
+    ctx.fillText(`${temp}°`, centerX + 15, 180);
+
+    ctx.font = 'bold 24px Arial'; //
+    ctx.textAlign = 'center';
+    ctx.fillText(desc.charAt(0).toUpperCase() + desc.slice(1), centerX, 245);
+  };
+
+  drawBlock('НІЧ', iconNight, forecast.night.temp, forecast.night.desc, WIDTH * 0.25);
+  drawBlock('ДЕНЬ', iconDay, forecast.day.temp, forecast.day.desc, WIDTH * 0.75);
+
+  const scale = (HEIGHT * 0.55) / personImg.height;
+  const pW = personImg.width * scale;
+  const pH = personImg.height * scale;
+  ctx.drawImage(personImg, WIDTH / 2 - pW / 2, HEIGHT - pH + 15, pW, pH);
+
+  ctx.font = 'bold 62px Arial'; 
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 10;
+  ctx.strokeText(randomText, WIDTH / 2, HEIGHT - 15);
+  ctx.fillStyle = 'white';
+  ctx.fillText(randomText, WIDTH / 2, HEIGHT - 15);
+
+  const filePath = path.join(__dirname, 'weather_temp.png');
+  fs.writeFileSync(filePath, canvas.toBuffer('image/png'));
+  return filePath;
+}
+
+/* ================= TELEGRAM LOGIC ================= */
+
+async function sendDailyWeather() {
+  try {
+    const forecast = await getForecastFromAPI();
+    const imagePath = await createWeatherImage(forecast);
+
+    const advice = getWeatherAdvice(forecast.day.desc, forecast.day.temp);
+
+    const caption = `🌤 <b>Погода у Білій Церкві на завтра (${getTomorrowFormattedUA()})</b>\n\n` +
+      
+      `💧 Вологість: <b>${forecast.day.humidity}%</b>\n` +
+      `💨 Вітер: <b>${forecast.day.wind} м/с</b>\n\n` +
+      `⚓ <b>Порада від хуадміна:</b> ${advice}\n\n` +
+      `<a href="https://t.me/huyova_bila_tserkva">✅ Хуйова Біла Церква</a> | <a href="https://t.me/xy_dmin">Прислати новину</a>`;
+
+    await bot.sendPhoto(CHAT_ID, imagePath, { caption, parse_mode: "HTML" });
+    console.log("✅ Погода в БЦ відправлена!");
+
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+  } catch (err) {
+    console.error("❌ Помилка бота:", err);
+  }
+}
+
+/* ================= SCHEDULER & SERVER ================= */
+
 let lastSentDate = null;
 
 setInterval(() => {
@@ -67,21 +188,13 @@ setInterval(() => {
   const minutes = kyivTime.getMinutes();
   const today = kyivTime.toISOString().split("T")[0];
 
-  if (hours === 07 && minutes === 45 && lastSentDate !== today) {
-    console.log("⏰ 07:45 — відправляємо погоду");
-    lastSentDate = today;
-    sendDailyWeather();
-  } else if (hours > 07 && minutes > 45 && lastSentDate !== today) {
-    console.log("⏰ Прокинулись пізніше → відправляємо погоду");
+  // Відправляємо об 18:30 як у вашому прикладі
+  if (hours === 18 && minutes === 30 && lastSentDate !== today) {
     lastSentDate = today;
     sendDailyWeather();
   }
 }, 60 * 1000);
 
 const app = express();
-app.get("/", (req, res) => {
-  res.send("Бот працює 🚀");
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Сервер запущено на порту ${PORT}`));
+app.get("/", (req, res) => res.send("Бот Погоди працює 🚀"));
+app.listen(process.env.PORT || 3000, () => console.log(`Сервер запущено на порту ${process.env.PORT || 3000}`));
