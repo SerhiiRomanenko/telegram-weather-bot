@@ -29,7 +29,7 @@ function getWeatherAdvice(desc, temp) {
   if (desc.includes("гроза")) return "Будь обережний! ⚡ Краще залишитись вдома.";
   if (desc.includes("сніг")) return "Чудовий день для снігових прогулянок ❄️";
   if (desc.includes("туман")) return "Будь обережний на дорозі 🌫";
-  if (parseFloat(temp) < 5) return "Тепло одягайся 🧥, холодно!";
+  if (parseFloat(temp) < 5) return "Тепло одягайся 🧥!";
   if (parseFloat(temp) > 25) return "Легкий одяг 👕 та пий багато води 💦";
   return "Чудовий день, насолоджуйся 🌤";
 }
@@ -90,7 +90,7 @@ async function createWeatherImage(forecast) {
   const phrases = ['ЄБАТЬ', 'ТА НУ НАХУЙ', 'ЗАЄБІСЬ', 'НУ ПІЗДЄЦ', 'ЦЕ ПИЗДА', 'Я В АХУЇ', 'ХУЯК'];
   const randomText = phrases[Math.floor(Math.random() * phrases.length)];
 
-  const faceIndex = Math.floor(Math.random() * 4) + 1;
+  const faceIndex = Math.floor(Math.random() * 6) + 1;
   const personPath = path.join(__dirname, 'icons', 'faces', `face_${faceIndex}.png`);
 
   const [iconNight, iconDay, personImg] = await Promise.all([
@@ -114,35 +114,53 @@ async function createWeatherImage(forecast) {
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(WIDTH / 2, 70); ctx.lineTo(WIDTH / 2, 220); ctx.stroke();
 
-  const drawBlock = (title, icon, temp, desc, centerX) => {
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.font = 'bold 22px Arial'; 
-    ctx.textAlign = 'center';
-    ctx.fillText(title, centerX, 90);
+const drawBlock = (title, icon, temp, desc, centerX, offsetX = 0) => {
+  const baseY = 135;        // спільна лінія для іконки + температури
+  const iconSize = 180;     // розмір іконки
 
-    ctx.drawImage(icon, centerX - 115, 95, 130, 130);
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 75px Arial'; 
-    ctx.textAlign = 'left';
-    ctx.fillText(`${temp}°`, centerX + 15, 180);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, centerX + offsetX, 75);
 
-    ctx.font = 'bold 24px Arial'; //
-    ctx.textAlign = 'center';
-    ctx.fillText(desc.charAt(0).toUpperCase() + desc.slice(1), centerX, 245);
-  };
+  // ІКОНКА (вирівняна по центру температури)
+  ctx.drawImage(
+    icon,
+    centerX - 150 + offsetX,
+    baseY - iconSize / 2,
+    iconSize,
+    iconSize
+  );
 
-  drawBlock('НІЧ', iconNight, forecast.night.temp, forecast.night.desc, WIDTH * 0.25);
-  drawBlock('ДЕНЬ', iconDay, forecast.day.temp, forecast.day.desc, WIDTH * 0.75);
+  // ТЕМПЕРАТУРА
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 75px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${temp}°`, centerX + 5 + offsetX, baseY + 25);
 
-  const scale = (HEIGHT * 0.55) / personImg.height;
+  // ОПИС
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    desc.charAt(0).toUpperCase() + desc.slice(1),
+    centerX + offsetX,
+    216   // позиція під температурою до опису 
+  );
+};
+
+
+ drawBlock('НІЧ', iconNight, forecast.night.temp, forecast.night.desc, WIDTH * 0.25, -40);
+drawBlock('ДЕНЬ', iconDay, forecast.day.temp, forecast.day.desc, WIDTH * 0.75, 40);
+
+  const scale = (HEIGHT * 0.7) / personImg.height;
   const pW = personImg.width * scale;
   const pH = personImg.height * scale;
   ctx.drawImage(personImg, WIDTH / 2 - pW / 2, HEIGHT - pH + 15, pW, pH);
 
-  ctx.font = 'bold 62px Arial'; 
+  ctx.font = 'bold 66px Arial'; 
   ctx.textAlign = 'center';
   ctx.strokeStyle = 'black';
-  ctx.lineWidth = 10;
+  ctx.lineWidth = 12;
   ctx.strokeText(randomText, WIDTH / 2, HEIGHT - 15);
   ctx.fillStyle = 'white';
   ctx.fillText(randomText, WIDTH / 2, HEIGHT - 15);
@@ -189,11 +207,11 @@ setInterval(() => {
   const today = kyivTime.toISOString().split("T")[0];
 
   // Відправляємо об 18:30 як у вашому прикладі
-  if (hours === 18 && minutes === 30 && lastSentDate !== today) {
+  // if (hours === 13 && minutes === 25 && lastSentDate !== today) {
     lastSentDate = today;
     sendDailyWeather();
-  }
-}, 60 * 1000);
+  // }
+}, 5 * 1000);  // 5 => 60 для реального використання
 
 const app = express();
 app.get("/", (req, res) => res.send("Бот Погоди працює 🚀"));
