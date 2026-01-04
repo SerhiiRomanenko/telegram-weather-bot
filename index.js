@@ -149,8 +149,8 @@ const drawBlock = (title, icon, temp, desc, centerX, offsetX = 0) => {
 };
 
 
- drawBlock('НІЧ', iconNight, forecast.night.temp, forecast.night.desc, WIDTH * 0.25, -40);
-drawBlock('ДЕНЬ', iconDay, forecast.day.temp, forecast.day.desc, WIDTH * 0.75, 40);
+ drawBlock('НІЧ', iconNight, forecast.night.temp, forecast.night.desc, WIDTH * 0.25, -35);
+drawBlock('ДЕНЬ', iconDay, forecast.day.temp, forecast.day.desc, WIDTH * 0.75, 35);
 
   const scale = (HEIGHT * 0.7) / personImg.height;
   const pW = personImg.width * scale;
