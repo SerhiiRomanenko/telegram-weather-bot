@@ -207,11 +207,11 @@ setInterval(() => {
   const today = kyivTime.toISOString().split("T")[0];
 
   // Відправляємо об 18:30 як у вашому прикладі
-  // if (hours === 13 && minutes === 25 && lastSentDate !== today) {
+  if (hours === 18 && minutes === 30 && lastSentDate !== today) {
     lastSentDate = today;
     sendDailyWeather();
-  // }
-}, 5 * 1000);  // 5 => 60 для реального використання
+  }
+}, 60 * 1000);  // 5 => 60 для реального використання
 
 const app = express();
 app.get("/", (req, res) => res.send("Бот Погоди працює 🚀"));
